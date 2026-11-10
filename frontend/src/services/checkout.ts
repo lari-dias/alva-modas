@@ -25,7 +25,7 @@ function isItem(value: unknown): value is ItemPedidoConfirmado {
 function isPedido(value: unknown): value is PedidoConfirmado {
   if (!value || typeof value !== 'object') return false
   const pedido = value as Record<string, unknown>
-  return isCartId(pedido.idPedido) && pedido.status === 'CONFIRMADO' && Array.isArray(pedido.itens) && pedido.itens.length > 0 && pedido.itens.every(isItem) && centavosValidos(pedido.totalCentavos) && ['ACEITO_PELO_SMTP', 'FALHOU', 'DESABILITADO'].includes(String(pedido.emailStatus))
+  return isCartId(pedido.idPedido) && pedido.status === 'CONFIRMADO' && Array.isArray(pedido.itens) && pedido.itens.length > 0 && pedido.itens.every(isItem) && centavosValidos(pedido.totalCentavos) && ['ACEITO_PELO_SMTP', 'ACEITO_PELA_API', 'FALHOU', 'DESABILITADO'].includes(String(pedido.emailStatus))
 }
 
 export async function finalizarCompra(cliente: DadosCliente, id: string): Promise<PedidoConfirmado> {
