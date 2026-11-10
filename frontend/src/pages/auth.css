@@ -23,11 +23,16 @@
   .auth-page { padding-block: 32px 48px; }
   .auth-panel { padding: 24px 20px; }
   .auth-panel h1 { font-size: 28px; }
-  .auth-field input[type="password"][autocomplete="new-password"] {
+  .auth-field input[type="password"] {
     box-sizing: border-box;
     height: 46px;
     padding: 12px;
+    font-family: Arial, Helvetica, sans-serif;
     font-size: 16px;
     line-height: 20px;
+  }
+  .auth-field input[type="password"] + p {
+    margin-top: 10px;
+    line-height: 1.5;
   }
 }
