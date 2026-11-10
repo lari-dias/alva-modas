@@ -1,0 +1,7 @@
+# Hero Alva Modas
+
+`hero-alva.png` é uma fotografia gerada com a ferramenta integrada imagegen, usando a imagem oficial `Styleboard E-commerce ALVA MODAS em Borgonha.png` como referência visual. O asset reproduz o enquadramento e a paleta do hero sem incorporar texto, controles ou a moldura do mockup. Os textos e controles são HTML independente.
+
+Prompt utilizado:
+
+> Use the attached styleboard as the visual reference. Produce ONLY the photographic background asset for the main ecommerce hero banner, not a website screenshot. Faithfully recreate the reference hero photograph: elegant young adult brunette woman wearing a dark burgundy sleeveless high-neck top, gold hoop earrings, hair softly gathered with a few face-framing strands, looking toward the upper left. Her head and upper torso positioned on the right half, occupying x=58% to 89% of the wide banner; head starts at the top. Pale warm dusty blush pink studio wall, subtle daylight palm-leaf shadows on the far right, soft natural light and elegant fashion editorial look matching the exact reference. Left 45% is calm empty pale pink negative space. Landscape ratio approximately 2.7:1, high resolution. NO text, NO logos, NO buttons, NO UI, NO phone frame, NO styleboard sidebar, NO borders. Reconstruct the photo hidden by the smartphone overlay. Keep the reference's color mood, clothing and composition. Save as a project asset.
