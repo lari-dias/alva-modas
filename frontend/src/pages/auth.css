@@ -19,4 +19,15 @@
 .auth-secondary { background: transparent; border: 0; cursor: pointer; }
 .auth-guest { border-top: 1px solid var(--color-border); padding-top: 22px; margin-top: 28px; text-align: center; }
 .auth-greeting { margin-block: 24px 8px; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .auth-page { padding-block: 32px 48px; } .auth-panel { padding: 24px 20px; } .auth-panel h1 { font-size: 28px; } }
+@media (max-width: 600px) {
+  .auth-page { padding-block: 32px 48px; }
+  .auth-panel { padding: 24px 20px; }
+  .auth-panel h1 { font-size: 28px; }
+  .auth-field input[type="password"][autocomplete="new-password"] {
+    box-sizing: border-box;
+    height: 46px;
+    padding: 12px;
+    font-size: 16px;
+    line-height: 20px;
+  }
+}
