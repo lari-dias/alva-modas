@@ -1,3 +1,4 @@
+
 import { plainToInstance } from 'class-transformer';
 import {
   IsInt,
@@ -82,6 +83,13 @@ class Environment {
 
   @IsEmail()
   SMTP_FROM = 'pedidos@alvamodas.test';
+
+  @IsString()
+  RESEND_API_KEY = '';
+
+  @IsString()
+  @IsNotEmpty()
+  RESEND_FROM = 'Alva Modas <onboarding@resend.dev>';
 }
 
 function booleanEnvironment(value: unknown, key: string): boolean {
@@ -105,20 +113,26 @@ export function validateEnvironment(config: Record<string, unknown>) {
     DB_SSL: booleanEnvironment(config.DB_SSL, 'DB_SSL'),
     TRUST_PROXY_HOPS: Number(config.TRUST_PROXY_HOPS ?? 0),
   });
+
   if (Boolean(environment.SMTP_USER) !== Boolean(environment.SMTP_PASSWORD)) {
     throw new Error('SMTP_USER and SMTP_PASSWORD must be configured together');
   }
+
   const errors = validateSync(environment);
+
   if (errors.length) {
     throw new Error(
       `Invalid environment variables: ${errors.map((error) => error.property).join(', ')}`,
     );
   }
+
   const origins = environment.FRONTEND_URL.split(',').map((origin) =>
     origin.trim(),
   );
+
   for (const origin of origins) {
     const url = new URL(origin);
+
     if (
       !['http:', 'https:'].includes(url.protocol) ||
       url.origin !== origin ||
@@ -129,13 +143,16 @@ export function validateEnvironment(config: Record<string, unknown>) {
       );
     }
   }
+
   if (environment.NODE_ENV === 'production') {
     if (!origins.every((origin) => new URL(origin).protocol === 'https:')) {
       throw new Error('FRONTEND_URL must use HTTPS in production');
     }
+
     if (!environment.DB_SSL) {
       throw new Error('DB_SSL must be true in production');
     }
+
     if (
       environment.SMTP_ENABLED &&
       environment.SMTP_USER &&
@@ -144,6 +161,13 @@ export function validateEnvironment(config: Record<string, unknown>) {
     ) {
       throw new Error('Authenticated SMTP requires TLS in production');
     }
+
+    if (!environment.RESEND_API_KEY && !environment.SMTP_ENABLED) {
+      throw new Error(
+        'Configure RESEND_API_KEY ou habilite SMTP em produção',
+      );
+    }
   }
+
   return environment;
 }

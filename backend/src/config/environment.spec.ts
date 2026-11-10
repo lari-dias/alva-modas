@@ -1,3 +1,4 @@
+
 import { validateEnvironment } from './environment';
 
 const database = {
@@ -17,6 +18,7 @@ describe('SMTP environment validation', () => {
       SMTP_SECURE: false,
     });
   });
+
   it('parses booleans and ports explicitly', () => {
     expect(
       validateEnvironment({
@@ -25,21 +27,33 @@ describe('SMTP environment validation', () => {
         SMTP_PORT: '465',
         SMTP_SECURE: 'true',
       }),
-    ).toMatchObject({ SMTP_ENABLED: true, SMTP_PORT: 465, SMTP_SECURE: true });
+    ).toMatchObject({
+      SMTP_ENABLED: true,
+      SMTP_PORT: 465,
+      SMTP_SECURE: true,
+    });
+
     expect(
-      validateEnvironment({ ...database, SMTP_ENABLED: 'false' }).SMTP_ENABLED,
+      validateEnvironment({
+        ...database,
+        SMTP_ENABLED: 'false',
+      }).SMTP_ENABLED,
     ).toBe(false);
   });
+
   it('rejects invalid configuration without exposing credentials', () => {
     expect(() =>
       validateEnvironment({ ...database, SMTP_ENABLED: 'yes' }),
     ).toThrow('SMTP_ENABLED');
+
     expect(() =>
       validateEnvironment({ ...database, SMTP_USER: 'test' }),
     ).toThrow('configured together');
+
     expect(() =>
       validateEnvironment({ ...database, SMTP_PORT: 'invalid' }),
     ).toThrow('SMTP_PORT');
+
     expect(() =>
       validateEnvironment({ ...database, SMTP_FROM: 'invalid' }),
     ).toThrow('SMTP_FROM');
@@ -53,6 +67,7 @@ describe('Production environment validation', () => {
     FRONTEND_URL: 'https://www.loja-alva.test',
     DB_SSL: 'true',
     TRUST_PROXY_HOPS: '1',
+    RESEND_API_KEY: 're_test_key',
   };
 
   it('requires HTTPS origins and database TLS in production', () => {
@@ -61,14 +76,19 @@ describe('Production environment validation', () => {
       DB_SSL: true,
       TRUST_PROXY_HOPS: 1,
     });
+
     expect(() =>
       validateEnvironment({
         ...production,
         FRONTEND_URL: 'http://www.loja-alva.test',
       }),
     ).toThrow('HTTPS');
+
     expect(() =>
-      validateEnvironment({ ...production, DB_SSL: 'false' }),
+      validateEnvironment({
+        ...production,
+        DB_SSL: 'false',
+      }),
     ).toThrow('DB_SSL');
   });
 
@@ -78,7 +98,10 @@ describe('Production environment validation', () => {
     'https://www.loja-alva.test/checkout',
   ])('rejects an invalid CORS origin: %s', (origin) => {
     expect(() =>
-      validateEnvironment({ ...production, FRONTEND_URL: origin }),
+      validateEnvironment({
+        ...production,
+        FRONTEND_URL: origin,
+      }),
     ).toThrow();
   });
 
@@ -89,13 +112,22 @@ describe('Production environment validation', () => {
       SMTP_USER: 'test-user',
       SMTP_PASSWORD: 'test-password',
     };
+
     expect(() => validateEnvironment(smtp)).toThrow('requires TLS');
+
     expect(
-      validateEnvironment({ ...smtp, SMTP_REQUIRE_TLS: 'true' }),
+      validateEnvironment({
+        ...smtp,
+        SMTP_REQUIRE_TLS: 'true',
+      }),
     ).toMatchObject({ SMTP_REQUIRE_TLS: true });
-    expect(validateEnvironment({ ...smtp, SMTP_SECURE: 'true' })).toMatchObject(
-      { SMTP_SECURE: true },
-    );
+
+    expect(
+      validateEnvironment({
+        ...smtp,
+        SMTP_SECURE: 'true',
+      }),
+    ).toMatchObject({ SMTP_SECURE: true });
   });
 
   it('allows a private unauthenticated capture server with explicit configuration', () => {
@@ -112,7 +144,10 @@ describe('Production environment validation', () => {
     'rejects invalid proxy hops: %s',
     (value) => {
       expect(() =>
-        validateEnvironment({ ...production, TRUST_PROXY_HOPS: value }),
+        validateEnvironment({
+          ...production,
+          TRUST_PROXY_HOPS: value,
+        }),
       ).toThrow('TRUST_PROXY_HOPS');
     },
   );
