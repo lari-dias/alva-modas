@@ -4,7 +4,7 @@ export interface DadosCliente {
   email: string
 }
 
-export type EmailStatus = 'ACEITO_PELO_SMTP' | 'ACEITO_PELA_API' | 'FALHOU' | 'DESABILITADO'
+export type EmailStatus = 'PENDENTE' | 'ACEITO_PELO_SMTP' | 'ACEITO_PELA_API' | 'FALHOU' | 'DESABILITADO'
 
 export interface ItemPedidoConfirmado {
   produtoId: string

@@ -63,6 +63,10 @@ export class CarrinhoService implements OnModuleInit, OnModuleDestroy {
     return this.operar(id, false);
   }
 
+  descartarConfirmado(id: string): void {
+    this.carrinhos.delete(id);
+  }
+
   async atualizar(
     dto: AtualizarItemDto,
     id: string,
@@ -140,7 +144,7 @@ export class CarrinhoService implements OnModuleInit, OnModuleDestroy {
     if (novo) this.carrinhos.set(cartId, carrinho);
     try {
       const itens = new Map(carrinho.itens);
-      const recuperando = alterar?.(itens) === true;
+      const recuperando = alterar ? alterar(itens) === true : true;
       this.validarLimites(itens);
       const produtos = new Map(carrinho.produtos);
       const resposta = await this.montarResposta(

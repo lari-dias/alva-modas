@@ -1,3 +1,4 @@
+import { diagnosticoCarrinhoAtivo } from '../services/carrinho-diagnostico'
 import { Heart, ShoppingCart } from 'lucide-react'
 import type { Produto } from '../types/produto'
 import { formatarPreco } from '../services/formatar-preco'
@@ -22,7 +23,7 @@ export function ProductCard({ produto }: ProductCardProps) {
         <p className="product-price">{formatarPreco(produto.preco)}</p>
         <div className="product-payment-slot" aria-hidden="true" />
       </div>
-      <button type="button" className="primary-button add-to-cart" disabled={!carrinho.podeAdicionar(produto.id, produto.estoque)} onClick={() => carrinho.adicionar(produto.id)} aria-label={`Adicionar ${produto.nome} ao carrinho`} aria-busy={adicionando}>
+      <button type="button" className="primary-button add-to-cart" data-diagnostico-motivos={diagnosticoCarrinhoAtivo() ? JSON.stringify(carrinho.diagnostico?.motivos(produto.id, produto.estoque)) : undefined} disabled={!carrinho.podeAdicionar(produto.id, produto.estoque)} onClick={() => carrinho.adicionar(produto.id)} aria-label={`Adicionar ${produto.nome} ao carrinho`} aria-busy={adicionando}>
         <ShoppingCart size={17} strokeWidth={1.5} aria-hidden="true" /><span>{produto.estoque === 0 ? 'Sem estoque' : adicionando ? 'Adicionando...' : 'Adicionar ao carrinho'}</span>
       </button>
     </article>

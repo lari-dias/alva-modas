@@ -101,7 +101,7 @@ export class AuthController {
       httpOnly: true,
       secure: this.config.get<string>('JWT_COOKIE_SECURE') === 'true',
       sameSite: 'strict',
-      path: '/auth',
+      path: this.config.get<string>('JWT_COOKIE_PATH', '/auth'),
       maxAge: 3600000,
     };
   }
@@ -111,11 +111,7 @@ export class AuthController {
       .getOrThrow<string>('FRONTEND_URL')
       .split(',')
       .map((item) => item.trim());
-    if (
-      req.headers.origin &&
-      !permitidas.includes(req.headers.origin) &&
-      req.headers['sec-fetch-site'] !== 'same-origin'
-    )
+    if (req.headers.origin && !permitidas.includes(req.headers.origin))
       throw new ForbiddenException('Origem não permitida.');
   }
 }

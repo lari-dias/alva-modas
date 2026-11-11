@@ -1,4 +1,3 @@
-
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConfirmacaoPedido, StatusEnvioEmail } from './confirmacao-pedido';
@@ -17,9 +16,10 @@ export class EmailService implements OnModuleDestroy {
 
   async enviarConfirmacao(
     pedido: ConfirmacaoPedido,
+    idempotencyKey?: string,
   ): Promise<StatusEnvioEmail> {
     if (this.config.get<string>('RESEND_API_KEY')) {
-      return this.resendService.enviarConfirmacao(pedido);
+      return this.resendService.enviarConfirmacao(pedido, idempotencyKey);
     }
 
     if (!this.transport) return StatusEnvioEmail.DESABILITADO;

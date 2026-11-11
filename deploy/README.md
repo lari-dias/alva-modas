@@ -1,10 +1,14 @@
-# Preparação para produção — Render
+# Preparação para produção — API Render e frontend Vercel
+
+Para a release do checkout persistente, siga primeiro [CHECKOUT-RECOVERY.md](CHECKOUT-RECOVERY.md). A topologia atual usa frontend e proxy na Vercel; as instruções históricas de Render Static Site e URL direta da API abaixo não se aplicam a essa release.
 
 Este diretório prepara a publicação, mas não executa deploy, SQL, migrations, seed ou alterações em credenciais. Os `.env` locais permanecem intactos. Os exemplos devem ser preenchidos no ambiente externo, não copiados por cima do desenvolvimento.
 
-## Topologia preparada
+## Referência histórica de infraestrutura
 
-`render.yaml`, na raiz, descreve uma API Node em uma instância Render Starter e um front-end Render Static Site. Ambos têm deploy automático desativado. Starter é um plano pago; nada foi criado ou contratado. A opção evita o desligamento por inatividade dos serviços gratuitos e mantém uma única memória de carrinhos durante a operação normal. Não habilitar autoscaling, múltiplos processos Node ou múltiplas réplicas.
+As seções abaixo registram a preparação anterior. Para esta release, render.yaml contém somente a API; frontend e função usam frontend/vercel.json. Variáveis, cookies e etapas atuais estão integralmente em CHECKOUT-RECOVERY.md. Não executar instruções históricas conflitantes.
+
+`render.yaml`, na raiz, descreve somente a API Node em uma instância Render Starter, com deploy automático desativado. O frontend usa a Vercel. Starter é um plano pago; nada foi criado ou contratado. A opção evita o desligamento por inatividade dos serviços gratuitos e mantém uma única memória de carrinhos durante a operação normal. Não habilitar autoscaling, múltiplos processos Node ou múltiplas réplicas.
 
 A API usa `backend` como raiz, Node 24.18.0, build de produção, remoção de dependências de desenvolvimento e `npm run start:prod`. O Render fornece `PORT`; o Nest escuta em `0.0.0.0`. O health check reutiliza `GET /produtos`, sem endpoint adicional. A janela de encerramento configurada é de 60 segundos.
 

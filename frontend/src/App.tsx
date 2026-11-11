@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import { CartDrawer } from './components/CartDrawer'
 import { AccountPage } from './pages/AccountPage'
 import { AuthProvider } from './providers/AuthProvider'
+import { CartDiagnostics } from './components/CartDiagnostics'
 
 function AppRoutes() {
   const { pathname, hash, key } = useLocation()
@@ -30,6 +31,6 @@ function AppRoutes() {
   return <><Routes><Route path="/" element={<HomePage />} /><Route path="/checkout" element={<CheckoutPage />} /><Route path="/conta" element={<AccountPage />} /><Route path="/cadastro" element={<AccountPage cadastro />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes><CartDrawer /></>
 }
 
-function App() { return <AuthProvider><AppRoutes /></AuthProvider> }
+function App() { return <AuthProvider><AppRoutes /><CartDiagnostics /></AuthProvider> }
 
 export default App

@@ -9,6 +9,7 @@ import { CarrinhoModule } from '../src/carrinho/carrinho.module';
 import { CarrinhoService } from '../src/carrinho/carrinho.service';
 import { CarrinhoRespostaDto } from '../src/carrinho/dto/carrinho-resposta.dto';
 import { Produto } from '../src/produtos/entities/produto.entity';
+import { CarrinhoCheckoutService } from '../src/carrinho/carrinho-checkout.service';
 
 describe('Cart HTTP API', () => {
   let app: INestApplication<App>;
@@ -27,6 +28,11 @@ describe('Cart HTTP API', () => {
         CarrinhoModule,
       ],
     })
+      .overrideProvider(CarrinhoCheckoutService)
+      .useValue({
+        executar: (_id: string | undefined, operacao: () => Promise<unknown>) =>
+          operacao(),
+      })
       .overrideProvider(getRepositoryToken(Produto))
       .useValue(repository)
       .compile();

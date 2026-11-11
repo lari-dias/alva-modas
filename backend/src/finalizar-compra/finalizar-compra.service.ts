@@ -5,7 +5,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { CarrinhoService } from '../carrinho/carrinho.service';
 import { paraCentavos } from '../carrinho/centavos';
 import { EmailService } from '../email/email.service';
@@ -39,73 +39,7 @@ export class FinalizarCompraService {
         try {
           return await this.dataSource.transaction(
             async (manager): Promise<ConfirmacaoPedido> => {
-              const produtos = await manager
-                .getRepository(Produto)
-                .createQueryBuilder('produto')
-                .where('produto.id IN (:...ids)', {
-                  ids: [...quantidades.keys()].sort(),
-                })
-                .orderBy('produto.id', 'ASC')
-                .setLock('pessimistic_write')
-                .getMany();
-              const porId = new Map(
-                produtos.map((produto) => [produto.id, produto]),
-              );
-              const itens = [...quantidades].map(([produtoId, quantidade]) => {
-                const produto = porId.get(produtoId);
-                if (!produto)
-                  throw new NotFoundException('Produto não encontrado.');
-                if (!produto.ativo)
-                  throw new ConflictException('Produto inativo.');
-                if (produto.estoque < quantidade)
-                  throw new ConflictException('Estoque insuficiente.');
-                const precoUnitarioCentavos = paraCentavos(produto.preco);
-                const subtotalCentavos = precoUnitarioCentavos * quantidade;
-                paraDecimal(subtotalCentavos);
-                return {
-                  produtoId,
-                  nomeProduto: produto.nome,
-                  quantidade,
-                  precoUnitarioCentavos,
-                  subtotalCentavos,
-                };
-              });
-              const totalCentavos = itens.reduce(
-                (total, item) => total + item.subtotalCentavos,
-                0,
-              );
-              const valorTotal = paraDecimal(totalCentavos);
-              const pedido = await manager.save(
-                Pedido,
-                manager.create(Pedido, {
-                  nomeCliente: cliente.nome,
-                  emailCliente: cliente.email,
-                  valorTotal,
-                  status: StatusPedido.CONFIRMADO,
-                }),
-              );
-              const registros = itens.map((item) =>
-                manager.create(ItemPedido, {
-                  pedido,
-                  produto: { id: item.produtoId },
-                  nomeProduto: item.nomeProduto,
-                  quantidade: item.quantidade,
-                  precoUnitario: paraDecimal(item.precoUnitarioCentavos),
-                  subtotal: paraDecimal(item.subtotalCentavos),
-                }),
-              );
-              await manager.save(ItemPedido, registros);
-              for (const produto of produtos) {
-                produto.estoque -= quantidades.get(produto.id)!;
-              }
-              await manager.save(Produto, produtos);
-              return {
-                idPedido: pedido.id,
-                nomeCliente: cliente.nome,
-                emailCliente: cliente.email,
-                itens,
-                totalCentavos,
-              };
+              return this.confirmar(manager, quantidades, cliente);
             },
           );
         } catch (error) {
@@ -128,6 +62,75 @@ export class FinalizarCompraService {
       itens: confirmado.itens,
       totalCentavos: confirmado.totalCentavos,
       emailStatus,
+    };
+  }
+  async confirmar(
+    manager: EntityManager,
+    quantidades: ReadonlyMap<string, number>,
+    cliente: FinalizarCompraDto,
+  ): Promise<ConfirmacaoPedido> {
+    const produtos = await manager
+      .getRepository(Produto)
+      .createQueryBuilder('produto')
+      .where('produto.id IN (:...ids)', {
+        ids: [...quantidades.keys()].sort(),
+      })
+      .orderBy('produto.id', 'ASC')
+      .setLock('pessimistic_write')
+      .getMany();
+    const porId = new Map(produtos.map((produto) => [produto.id, produto]));
+    const itens = [...quantidades].map(([produtoId, quantidade]) => {
+      const produto = porId.get(produtoId);
+      if (!produto) throw new NotFoundException('Produto não encontrado.');
+      if (!produto.ativo) throw new ConflictException('Produto inativo.');
+      if (produto.estoque < quantidade)
+        throw new ConflictException('Estoque insuficiente.');
+      const precoUnitarioCentavos = paraCentavos(produto.preco);
+      const subtotalCentavos = precoUnitarioCentavos * quantidade;
+      paraDecimal(subtotalCentavos);
+      return {
+        produtoId,
+        nomeProduto: produto.nome,
+        quantidade,
+        precoUnitarioCentavos,
+        subtotalCentavos,
+      };
+    });
+    const totalCentavos = itens.reduce(
+      (total, item) => total + item.subtotalCentavos,
+      0,
+    );
+    const valorTotal = paraDecimal(totalCentavos);
+    const pedido = await manager.save(
+      Pedido,
+      manager.create(Pedido, {
+        nomeCliente: cliente.nome,
+        emailCliente: cliente.email,
+        valorTotal,
+        status: StatusPedido.CONFIRMADO,
+      }),
+    );
+    const registros = itens.map((item) =>
+      manager.create(ItemPedido, {
+        pedido,
+        produto: { id: item.produtoId },
+        nomeProduto: item.nomeProduto,
+        quantidade: item.quantidade,
+        precoUnitario: paraDecimal(item.precoUnitarioCentavos),
+        subtotal: paraDecimal(item.subtotalCentavos),
+      }),
+    );
+    await manager.save(ItemPedido, registros);
+    for (const produto of produtos) {
+      produto.estoque -= quantidades.get(produto.id)!;
+    }
+    await manager.save(Produto, produtos);
+    return {
+      idPedido: pedido.id,
+      nomeCliente: cliente.nome,
+      emailCliente: cliente.email,
+      itens,
+      totalCentavos,
     };
   }
 }

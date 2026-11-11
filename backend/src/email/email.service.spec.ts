@@ -5,8 +5,10 @@ import { EmailService } from './email.service';
 import { ConfirmacaoPedido, StatusEnvioEmail } from './confirmacao-pedido';
 import { confirmacaoHtml } from './confirmacao.template';
 import { smtpProvider } from './smtp.provider';
+import { ResendService } from './resend.service';
 
 describe('EmailService with local SMTP sink', () => {
+  const resend = new ResendService(new ConfigService());
   const pedido: ConfirmacaoPedido = {
     idPedido: 'a17a0000-0000-4000-8000-000000000099',
     nomeCliente: 'Maria',
@@ -66,7 +68,7 @@ describe('EmailService with local SMTP sink', () => {
       SMTP_SECURE: false,
       SMTP_FROM: 'pedidos@alvamodas.test',
     });
-    service = new EmailService(smtpProvider.useFactory(config), config);
+    service = new EmailService(smtpProvider.useFactory(config), config, resend);
   });
 
   afterEach(async () => {
@@ -84,6 +86,7 @@ describe('EmailService with local SMTP sink', () => {
     const protectedService = new EmailService(
       smtpProvider.useFactory(config),
       config,
+      resend,
     );
     try {
       expect(await protectedService.enviarConfirmacao(pedido)).toBe(
@@ -119,11 +122,31 @@ describe('EmailService with local SMTP sink', () => {
   });
 
   it('does not send when SMTP is disabled', async () => {
-    const disabled = new EmailService(null, new ConfigService());
+    const disabled = new EmailService(null, new ConfigService(), resend);
     expect(await disabled.enviarConfirmacao(pedido)).toBe(
       StatusEnvioEmail.DESABILITADO,
     );
     expect(mensagens).toHaveLength(0);
+  });
+
+  it('forwards the durable idempotency key to Resend without sending SMTP', async () => {
+    const enviar = jest
+      .spyOn(resend, 'enviarConfirmacao')
+      .mockResolvedValue(StatusEnvioEmail.ACEITO_PELA_API);
+    const api = new EmailService(
+      null,
+      new ConfigService({ RESEND_API_KEY: 're_test_key' }),
+      resend,
+    );
+    try {
+      expect(await api.enviarConfirmacao(pedido, 'checkout/pedido')).toBe(
+        StatusEnvioEmail.ACEITO_PELA_API,
+      );
+      expect(enviar).toHaveBeenCalledWith(pedido, 'checkout/pedido');
+      expect(mensagens).toHaveLength(0);
+    } finally {
+      enviar.mockRestore();
+    }
   });
 
   it('escapes customer and product names in HTML', () => {

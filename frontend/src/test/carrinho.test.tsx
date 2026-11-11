@@ -66,13 +66,14 @@ describe('Integração do carrinho', () => {
           return Response.json(respostaCarrinho(atual, quantidade, totalServidor), { status: 201 })
         }
         if (!id) return Response.json({}, { status: 400 })
-        if (method === 'GET' && (carrinhos.get(id) ?? 0) > estoqueAtual) return Response.json({}, { status: 409 })
         if (method === 'PUT') {
           const quantidade = body?.quantidade ?? 0
           if ((quantidade > estoqueAtual && quantidade >= (carrinhos.get(id) ?? 0)) || quantidade < 0) return Response.json({}, { status: 409 })
           carrinhos.set(id, quantidade)
         }
-        return Response.json(respostaCarrinho(id, carrinhos.get(id) ?? 0, totalServidor))
+        const resposta = respostaCarrinho(id, carrinhos.get(id) ?? 0, totalServidor)
+        resposta.itens.forEach(item => { item.produto.estoque = estoqueAtual; item.disponivel = item.quantidade <= estoqueAtual })
+        return Response.json(resposta)
       } finally {
         ativas--
       }
@@ -295,7 +296,7 @@ describe('Integração do carrinho', () => {
     expect(document.body.style.overflow).not.toBe('hidden')
   })
 
-  it('permite diminuir e remover após GET em conflito, sem consultar antes do PUT', async () => {
+  it('permite diminuir e remover itens indisponíveis com leitura atualizada antes do PUT', async () => {
     carrinhos.set(cartIdTeste, 2)
     localStorage.setItem(CART_STORAGE_KEY, cartIdTeste)
     montar()
@@ -309,8 +310,8 @@ describe('Integração do carrinho', () => {
     const inicio = chamadas.length
     await user.click(screen.getByRole('button', { name: /Diminuir quantidade/ }))
     await waitFor(() => expect(screen.getByLabelText(`1 unidades de ${produtoTeste.nome}`)).toBeVisible())
-    expect(chamadas[inicio].method).toBe('PUT')
-    expect(chamadas[inicio].body?.quantidade).toBe(1)
+    expect(chamadas[inicio].method).toBe('GET')
+    expect(chamadas.slice(inicio).find(call => call.method === 'PUT')?.body?.quantidade).toBe(1)
     await waitFor(() => expect(screen.getByRole('button', { name: /Remover Blusa/ })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: /Remover Blusa/ }))
     await waitFor(() => expect(carrinhos.get(cartIdTeste)).toBe(0))
@@ -330,17 +331,84 @@ describe('Integração do carrinho', () => {
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(cartIdTeste)
   })
 
-  it('serializa reduções usando a última resposta confirmada sem GET bloqueador', async () => {
+  it('serializa reduções usando a quantidade atual do servidor', async () => {
     carrinhos.set(cartIdTeste, 3)
     localStorage.setItem(CART_STORAGE_KEY, cartIdTeste)
     const { result } = renderHook(() => useCarrinho(), { wrapper: Wrapper })
     await waitFor(() => expect(result.current.quantidade).toBe(3))
-    falhaConsulta = 409
     act(() => { result.current.ajustar(produtoTeste.id, -1); result.current.ajustar(produtoTeste.id, -1) })
     await waitFor(() => expect(result.current.quantidade).toBe(1))
     await waitFor(() => expect(result.current.ocupado).toBe(false))
     expect(chamadas.filter((call) => call.method === 'PUT').map((call) => call.body?.quantidade)).toEqual([2, 1])
     expect(maximoAtivas).toBe(1)
+  })
+
+  it('reduz a quantidade alterada por outra aba sem sobrescrever unidades adicionais', async () => {
+    carrinhos.set(cartIdTeste, 3)
+    localStorage.setItem(CART_STORAGE_KEY, cartIdTeste)
+    const { result } = renderHook(() => useCarrinho(), { wrapper: Wrapper })
+    await waitFor(() => expect(result.current.quantidade).toBe(3))
+    carrinhos.set(cartIdTeste, 4)
+    act(() => result.current.ajustar(produtoTeste.id, -1))
+    await waitFor(() => expect(chamadas.some(call => call.method === 'PUT')).toBe(true))
+    await waitFor(() => expect(result.current.ocupado).toBe(false))
+    expect(chamadas.find(call => call.method === 'PUT')?.body?.quantidade).toBe(3)
+    expect(carrinhos.get(cartIdTeste)).toBe(3)
+  })
+
+  it('coordena reduções de dois caches independentes pelo mesmo Web Lock', async () => {
+    carrinhos.set(cartIdTeste, 3)
+    localStorage.setItem(CART_STORAGE_KEY, cartIdTeste)
+    let fila = Promise.resolve<unknown>(undefined)
+    const request = vi.fn((_nome: string, callback: () => Promise<unknown>) => {
+      const atual = fila.then(callback, callback)
+      fila = atual.catch(() => undefined)
+      return atual
+    })
+    vi.stubGlobal('navigator', { locks: { request } })
+    const outroClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const OutraAba = ({ children }: { children: ReactNode }) => <QueryClientProvider client={outroClient}><CarrinhoProvider>{children}</CarrinhoProvider></QueryClientProvider>
+    const primeira = renderHook(() => useCarrinho(), { wrapper: Wrapper })
+    const segunda = renderHook(() => useCarrinho(), { wrapper: OutraAba })
+    try {
+      await waitFor(() => expect(primeira.result.current.quantidade).toBe(3))
+      await waitFor(() => expect(segunda.result.current.quantidade).toBe(3))
+      act(() => { primeira.result.current.ajustar(produtoTeste.id, -1); segunda.result.current.ajustar(produtoTeste.id, -1) })
+      await waitFor(() => expect(chamadas.filter(call => call.method === 'PUT')).toHaveLength(2))
+      await waitFor(() => expect(primeira.result.current.ocupado || segunda.result.current.ocupado).toBe(false))
+      expect(chamadas.filter(call => call.method === 'PUT').map(call => call.body?.quantidade)).toEqual([2, 1])
+      expect(carrinhos.get(cartIdTeste)).toBe(1)
+      expect(maximoAtivas).toBe(1)
+    } finally {
+      segunda.unmount()
+      outroClient.clear()
+    }
+  })
+
+  it('carrega uma sacola indisponível sem cache anterior e permite reduzi-la', async () => {
+    carrinhos.set(cartIdTeste, 2)
+    estoqueAtual = 1
+    localStorage.setItem(CART_STORAGE_KEY, cartIdTeste)
+    montar()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /Abrir carrinho/ }))
+    const reduzir = await screen.findByRole('button', { name: /Diminuir quantidade/ })
+    await waitFor(() => expect(reduzir).toBeEnabled())
+    expect(screen.getByRole('button', { name: /Aumentar quantidade/ })).toBeDisabled()
+    await user.click(reduzir)
+    await waitFor(() => expect(carrinhos.get(cartIdTeste)).toBe(1))
+  })
+
+  it('preserva o estado e não envia quantidade calculada do cache quando a consulta falha', async () => {
+    carrinhos.set(cartIdTeste, 3)
+    localStorage.setItem(CART_STORAGE_KEY, cartIdTeste)
+    const { result } = renderHook(() => useCarrinho(), { wrapper: Wrapper })
+    await waitFor(() => expect(result.current.quantidade).toBe(3))
+    falhaConsulta = 503
+    act(() => result.current.ajustar(produtoTeste.id, -1))
+    await waitFor(() => expect(result.current.erro).toBeTruthy())
+    expect(chamadas.filter(call => call.method === 'PUT')).toHaveLength(0)
+    expect(carrinhos.get(cartIdTeste)).toBe(3)
   })
 
   it('não descarta o UUID em um 404 sem código de carrinho expirado', async () => {

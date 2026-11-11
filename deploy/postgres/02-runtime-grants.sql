@@ -17,6 +17,8 @@ GRANT SELECT ON TABLE public.produtos TO alva_app;
 GRANT UPDATE (estoque, "atualizadoEm") ON TABLE public.produtos TO alva_app;
 GRANT SELECT, INSERT ON TABLE public.clientes, public.pedidos, public.itens_pedido TO alva_app;
 GRANT USAGE ON TYPE public.status_pedido_enum TO alva_app;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.checkout_tentativas, public.checkout_carrinhos, public.email_outbox TO alva_app;
+GRANT SELECT, UPDATE ON TABLE public.checkout_controle TO alva_app;
 COMMIT;
 
 SELECT rolname, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls

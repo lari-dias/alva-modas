@@ -1,4 +1,3 @@
-
 import { validateEnvironment } from './environment';
 
 const database = {
@@ -10,6 +9,16 @@ const database = {
 };
 
 describe('SMTP environment validation', () => {
+  it('valida a ativação explícita da outbox', () => {
+    expect(
+      validateEnvironment({ ...database, CHECKOUT_OUTBOX_ENABLED: 'true' })
+        .CHECKOUT_OUTBOX_ENABLED,
+    ).toBe(true);
+    expect(validateEnvironment(database).CHECKOUT_OUTBOX_ENABLED).toBe(false);
+    expect(() =>
+      validateEnvironment({ ...database, CHECKOUT_OUTBOX_ENABLED: 'yes' }),
+    ).toThrow('CHECKOUT_OUTBOX_ENABLED');
+  });
   it('defaults to disabled SMTP on loopback without credentials', () => {
     expect(validateEnvironment(database)).toMatchObject({
       SMTP_ENABLED: false,
@@ -68,6 +77,9 @@ describe('Production environment validation', () => {
     DB_SSL: 'true',
     TRUST_PROXY_HOPS: '1',
     RESEND_API_KEY: 're_test_key',
+    API_PROXY_SECRET: 'proxy-test-secret-with-at-least-32-characters',
+    CHECKOUT_ADMIN_TOKEN: 'admin-test-secret-with-at-least-32-characters',
+    JWT_COOKIE_PATH: '/api/auth',
   };
 
   it('requires HTTPS origins and database TLS in production', () => {
@@ -90,6 +102,21 @@ describe('Production environment validation', () => {
         DB_SSL: 'false',
       }),
     ).toThrow('DB_SSL');
+  });
+
+  it('exige segredos separados e Path compatível com o proxy em produção', () => {
+    expect(() =>
+      validateEnvironment({ ...production, API_PROXY_SECRET: 'curto' }),
+    ).toThrow('API_PROXY_SECRET');
+    expect(() =>
+      validateEnvironment({
+        ...production,
+        CHECKOUT_ADMIN_TOKEN: production.API_PROXY_SECRET,
+      }),
+    ).toThrow('distintos');
+    expect(() =>
+      validateEnvironment({ ...production, JWT_COOKIE_PATH: '/auth' }),
+    ).toThrow('JWT_COOKIE_PATH');
   });
 
   it.each([

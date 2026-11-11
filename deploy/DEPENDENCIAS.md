@@ -1,5 +1,7 @@
 # Análise dos alertas de produção
 
+Reconsulta em 11/11/2026, sem alterar dependências ou lockfiles: `npm audit --json` encontrou 10 pacotes moderados no frontend e 29 no backend (24 moderados e 5 baixos), incluindo ferramentas de desenvolvimento. Na auditoria anterior de produção, frontend teve zero e backend três moderados na cadeia descrita abaixo. A contagem inclui propagação transitiva. As sugestões automáticas envolvem também saltos de versão principal e downgrades; não foram aplicadas sem comprovação de compatibilidade. Nenhum `npm audit fix` foi executado. Esses alertas permanecem pendências conhecidas, sem alertas altos ou críticos na consulta.
+
 Verificação em 10/11/2026, usando `npm audit --omit=dev --json`, `npm ls typeorm glob minimatch` e as versões publicadas no registro npm. O resultado do back-end é de três pacotes afetados na mesma cadeia transitiva, não três falhas independentes do código da loja. O front-end não apresentou alertas de produção na auditoria final.
 
 | Pacote instalado | Alerta | Correção publicada | Decisão |

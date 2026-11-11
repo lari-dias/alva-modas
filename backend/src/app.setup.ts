@@ -2,11 +2,15 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { Express } from 'express';
+import { proxySecurity } from './security/proxy-security';
+import { commerceRateLimit } from './security/commerce-rate-limit';
 
 export function configureApp(app: INestApplication) {
   const config = app.get(ConfigService);
   const server = app.getHttpAdapter().getInstance() as Express;
   server.set('trust proxy', config.get<number>('TRUST_PROXY_HOPS', 0));
+  server.use(proxySecurity(config));
+  server.use(commerceRateLimit());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -135,6 +135,7 @@ Crie um banco PostgreSQL exclusivo para desenvolvimento e configure no `backend/
 - `DB_HOST`, `DB_PORT` e `DB_DATABASE`.
 - `DB_USERNAME` e `DB_PASSWORD`.
 - `JWT_SECRET`: segredo aleatório exclusivo, com pelo menos 32 caracteres.
+- `CHECKOUT_ADMIN_TOKEN`: outro segredo aleatório exclusivo, com pelo menos 32 caracteres, para abrir e pausar o checkout local.
 - `FRONTEND_URL=http://localhost:5173`.
 - `JWT_COOKIE_SECURE=false` para desenvolvimento local em HTTP.
 
@@ -185,11 +186,20 @@ npm run dev
 | API | http://localhost:3000 |
 | Swagger | http://localhost:3000/api/docs |
 
+As migrations deixam o checkout fechado. Com a API local em execução, abra outro terminal na pasta `backend` e libere somente seu banco de desenvolvimento:
+
+```powershell
+node --env-file=.env scripts/checkout-control.mjs pause
+node --env-file=.env scripts/checkout-control.mjs open
+```
+
+O modelo `.env.example` define `NODE_ENV=development` e `CHECKOUT_CONTROL_URL=http://localhost:3000`. O token administrativo deve estar preenchido no `.env`; não o envie ao frontend. Para produção, siga o [roteiro de implantação e recuperação](deploy/CHECKOUT-RECOVERY.md), que exige migrations e configuração autorizadas separadamente.
+
 ### E-mails em desenvolvimento
 
-A aplicação pode ser executada localmente com `SMTP_ENABLED=false` e sem configurar a Resend. Nesse cenário, os pedidos são registrados com envio de e-mail desabilitado.
+A aplicação pode ser executada localmente com `CHECKOUT_OUTBOX_ENABLED=false` e sem configurar um provedor. Nesse cenário, os pedidos são registrados e os eventos de e-mail permanecem pendentes, sem envio externo.
 
-Para testar a integração, configure `RESEND_API_KEY` e `RESEND_FROM` no backend e utilize destinatários controlados. Também é possível utilizar um servidor SMTP de desenvolvimento.
+Para testar a integração, configure `CHECKOUT_OUTBOX_ENABLED=true`, `RESEND_API_KEY` e `RESEND_FROM` no backend e utilize destinatários controlados. Também é possível utilizar SMTP de desenvolvimento; envios incertos por SMTP exigem revisão, sem repetição automática.
 
 ## Testes e builds
 
@@ -201,8 +211,9 @@ Execute os comandos na pasta correspondente:
 | Testes HTTP | — | `npm run test:e2e -- --runInBand` |
 | Build | `npm run build` | `npm run build` |
 | Lint | `npm run lint` | `npm run lint` |
+| TypeScript completo | `npm run typecheck` | `npm run typecheck` |
 
-O lint do backend aplica correções automaticamente.
+O lint verifica sem editar arquivos. Para aplicar correções do backend intencionalmente, use `npm run lint:fix`.
 
 Os testes cobrem comportamentos do catálogo, carrinho, autenticação e checkout, além de validações e regras do backend.
 

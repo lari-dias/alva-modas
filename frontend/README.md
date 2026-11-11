@@ -72,7 +72,7 @@ Não há segredo a configurar no front-end: mantenha apenas `VITE_API_URL`. Conf
 
 Para validar no navegador, abra `/conta`, navegue até Criar conta e, em um banco de desenvolvimento, cadastre uma conta com senha de 8–128 caracteres. Confira o estado autenticado, recarregue a página e teste Sair/Entrar. Isso grava somente o cliente; não confirme pedidos para testar autenticação. Os testes automatizados simulam as respostas HTTP e verificam validação, duplicidade de envio, erros, restauração de sessão, logout e preservação da compra como visitante. Não há recuperação de senha, histórico, favoritos ou painel administrativo.
 
-O identificador só é descartado automaticamente quando a API retorna `code: CART_NOT_FOUND`. Erros de produto preservam o carrinho. Reduções usam a última quantidade confirmada em cache e enviam PUT sem depender de um GET que possa retornar conflito; aumentos continuam consultando e validando os dados atuais. Itens com `disponivel: false` permanecem visíveis para correção, com checkout bloqueado até a recuperação.
+O identificador só é descartado automaticamente quando a API retorna `code: CART_NOT_FOUND`. Erros de produto preservam o carrinho. Reduções e aumentos consultam o estado atual do servidor dentro do Web Lock antes do PUT; falha na consulta preserva a sacola sem usar quantidade de cache desatualizada. Itens com `disponivel: false` permanecem visíveis para correção, com checkout bloqueado até a recuperação.
 
 O rodapé segue a mesma marca, tipografia e paleta; a referência não mostra o rodapé completo. A lateral com paleta/tipografia e a moldura de celular do styleboard não fazem parte da interface da loja.
 
@@ -137,32 +137,16 @@ Para testar manualmente, mantenha a API em execução e abra `http://localhost:5
 
 ## Checkout
 
-`CheckoutPage` reutiliza header, rodapé e contexto do carrinho. `CheckoutForm` usa React Hook Form e Zod: nome aparado com 2 a 120 caracteres e e-mail aparado, válido, com no máximo 254 caracteres, conforme o DTO NestJS. `CheckoutSummary` apresenta os itens e valores em centavos do carrinho, sem recalcular totais. Os dados são reconsultados ao entrar na página.
+CheckoutPage preserva header, rodapé, resumo e formulário existentes. Nome e e-mail são validados por React Hook Form/Zod e pelo backend. O navegador não envia preços ou totais.
 
-`useCheckout` usa uma mutation TanStack Query com `retry: false` e `networkMode: always`, sem envio automático ao reconectar. O serviço `src/services/checkout.ts` envia somente `{ nome, email }` em `POST /finalizar-compra`, com `X-Cart-Id`. Não envia preços, quantidades, subtotais ou total do navegador. A resposta é validada antes de apresentar confirmação.
+useCheckout consulta a disponibilidade, registra uma tentativa versionada no localStorage e prepara/confirma a mesma chave persistente no backend. O registro contém UUID da tentativa, UUID da sacola, token aleatório de recuperação e indicação de autenticação; não contém nome, e-mail ou valores. O token de visitante é uma credencial: não compartilhar nem registrar em logs.
 
-A finalização compartilha o scope de mutations e o bloqueio do carrinho com suas alterações. O botão e os campos ficam bloqueados durante o envio; uma trava síncrona impede submits repetidos antes da próxima renderização. Na confirmação, o contexto remove o UUID e o cache daquela sacola, zera o contador, invalida o catálogo e mostra número, itens, status e total retornados pelo servidor. `CheckoutSuccess` diferencia:
+Falhas de rede, timeout e respostas inválidas preservam a tentativa e bloqueiam alterações da sacola. Verificar confirmação consulta o resultado persistido: CONFIRMADA mostra o pedido; ENCERRADA_SEM_PEDIDO libera a sacola; PROCESSANDO mantém a proteção. Não há reenvio automático ao reconectar. Falhas após preparar podem permanecer em processamento por até 15 minutos antes do encerramento seguro, se a confirmação não tiver sido executada.
 
-- `ACEITO_PELO_SMTP`: mensagem aceita pelo servidor SMTP, sem garantia de entrega na caixa do destinatário.
-- `FALHOU`: pedido registrado, envio do e-mail não confirmado. O pedido não é reenviado por esse motivo.
-- `DESABILITADO`: pedido registrado, mas nenhum e-mail é enviado neste ambiente.
+Tentativas autenticadas exigem login na mesma conta. Marcadores legados contendo somente UUID ou tokens perdidos não podem ser associados com segurança aos pedidos históricos: precisam de conferência administrativa; não limpar o armazenamento para refazer compra incerta.
 
-O formulário e a confirmação informam que nenhum pagamento é realizado. O resumo confirmado fica em memória enquanto a página permanece montada; não há histórico de pedidos ou persistência de dados do cliente nesta etapa.
+CheckoutSuccess mostra o total confirmado e distingue e-mail pendente, aceito pela API, aceito por SMTP e falha. Nenhum pagamento é realizado. O envio é recuperado pela outbox do backend.
 
-### Proteção após resposta incerta
+Em produção, VITE_API_URL=/api e a função Vercel implementam o proxy de mesma origem, preservando cookies fortes. API_UPSTREAM_URL, STOREFRONT_ORIGIN e API_PROXY_SECRET são exclusivos do servidor, nunca VITE_*. O vercel.json mantém o fallback da SPA sem encaminhar rotas administrativas. Consulte [CHECKOUT-RECOVERY.md](../deploy/CHECKOUT-RECOVERY.md) para configuração.
 
-Antes do POST, o navegador guarda **apenas o UUID do carrinho** na chave adicional `alva-modas:checkout-pending`. Nome, e-mail e dados financeiros não são salvos. Essa marca permite bloquear outra confirmação no mesmo navegador, inclusive após reload e em outras abas, e impede alterações no carrinho enquanto o resultado estiver pendente. Se o armazenamento não estiver disponível, a finalização não é enviada, pois não seria possível preservar essa proteção.
-
-Em sucesso ou rejeição conhecida pelo contrato (400, 404, 409, 422), a marca é removida. Em falha de rede, timeout, erro 5xx ou resposta de sucesso inválida, ela permanece: a transação pode ter sido confirmada. A página orienta a **não reenviar nem refazer a compra antes de verificar o resultado** e não oferece repetição automática. O carrinho também não é apagado como se a operação tivesse sido concluída.
-
-Essa marca não substitui idempotência no servidor. O back-end atual não oferece uma chave de idempotência persistida ou consulta de confirmação por UUID do carrinho. Uma interrupção após o envio exige verificação administrativa do pedido no ambiente de back-end/banco. GET do carrinho com 404 não comprova se houve venda. Não apague a marca apenas para tentar novamente. Somente após verificar o resultado, o responsável pelo ambiente pode remover a chave `alva-modas:checkout-pending` nas ferramentas do navegador e conferir se o UUID da sacola ainda é válido. Limpar o armazenamento, usar outro navegador ou operar fora do bloqueio não oferece garantia contra duplicação.
-
-### Validação no navegador
-
-1. Execute `npm.cmd run dev` na pasta `frontend` e mantenha o NestJS disponível em `VITE_API_URL`.
-2. Adicione produtos, abra a sacola e clique em **Finalizar compra**. Confira o resumo e os campos na rota `/checkout`.
-3. Campos vazios ou e-mail inválido exibem mensagens sem enviar uma finalização.
-4. **Confirmar pedido chama o endpoint real, grava uma venda e desconta estoque. Execute somente em um banco de testes quando essa operação estiver autorizada.** Para validar e-mail, use o Mailpit já configurado no back-end, sem destinatários externos involuntários.
-5. Para validação sem gravar vendas, execute `npm.cmd test`: os serviços recebem respostas simuladas e os fluxos de sucesso/falha não chegam à API real.
-
-O layout foi conferido em desktop, tablet e mobile. Em hospedagem estática, configure fallback de `/checkout` para `index.html` para permitir abrir/recarregar essa rota diretamente. O Vite já oferece esse comportamento no desenvolvimento. Nenhum arquivo do back-end precisa ser alterado.
+Os testes frontend simulam respostas HTTP e caches independentes; não comprovam comportamento de abas, layout ou cookies em navegador real. Para ensaio manual, use banco isolado: confirmar pedido grava dados e desconta estoque. Não foi realizado ensaio manual em produção nesta correção.

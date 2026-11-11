@@ -6,6 +6,7 @@ import { App } from 'supertest/types';
 import { configureApp } from '../src/app.setup';
 import { ProdutosModule } from '../src/produtos/produtos.module';
 import { CarrinhoModule } from '../src/carrinho/carrinho.module';
+import { CarrinhoCheckoutService } from '../src/carrinho/carrinho-checkout.service';
 import { PedidosModule } from '../src/pedidos/pedidos.module';
 import { EmailModule } from '../src/email/email.module';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -77,6 +78,11 @@ describe('Application setup (e2e)', () => {
         EmailModule,
       ],
     })
+      .overrideProvider(CarrinhoCheckoutService)
+      .useValue({
+        executar: (_id: string | undefined, operacao: () => Promise<unknown>) =>
+          operacao(),
+      })
       .overrideProvider(getRepositoryToken(Produto))
       .useValue(repository)
       .overrideProvider(getRepositoryToken(Pedido))

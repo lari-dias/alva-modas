@@ -20,11 +20,14 @@ export function CheckoutPage() {
       <main className="checkout-page content-width">
         <Link to="/#produtos" className="checkout-back"><ArrowLeft size={16} aria-hidden="true" />Continuar comprando</Link>
         <div className="checkout-heading"><p>ALVA MODAS</p><h1 tabIndex={-1}>Finalizar compra</h1></div>
+        {!checkout.incerto && checkout.mensagemRecuperacao && <p className="checkout-muted" role="status">{checkout.mensagemRecuperacao}</p>}
         {checkout.pedido ? <CheckoutSuccess pedido={checkout.pedido} /> : checkout.incerto ? (
           <section className="checkout-panel checkout-uncertain" aria-labelledby="checkout-uncertain-title">
             <h2 id="checkout-uncertain-title">Confirmação aguardando verificação</h2>
             <p role="alert">{checkout.erro ?? 'Há uma tentativa de confirmação com resultado pendente.'} Não envie novamente nem refaça a compra: o pedido pode ter sido registrado. Verifique o resultado antes de continuar.</p>
             <p>Por segurança, uma nova confirmação está bloqueada neste navegador.</p>
+            {checkout.mensagemRecuperacao && <p role="status">{checkout.mensagemRecuperacao}</p>}
+            <button type="button" className="primary-button checkout-return" disabled={checkout.verificando} onClick={() => { void checkout.verificar() }}>{checkout.verificando ? 'Verificando...' : 'Verificar confirmação'}</button>
           </section>
         ) : cart.carregando && !cart.carrinho ? (
           <p className="checkout-loading" role="status"><LoaderCircle size={21} className="motion-safe:animate-spin" aria-hidden="true" />Carregando sua sacola...</p>

@@ -20,7 +20,12 @@ export class AuthRateLimitGuard implements CanActivate {
       if (limite.ate <= agora) this.tentativas.delete(ip);
     }
     const req = context.switchToHttp().getRequest<Request>();
-    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    const ip =
+      (req.res?.locals as { alvaClientIp?: string } | undefined)
+        ?.alvaClientIp ??
+      req.ip ??
+      req.socket.remoteAddress ??
+      'unknown';
     let limite = this.tentativas.get(ip);
     if (!limite) {
       if (this.tentativas.size >= 10000)

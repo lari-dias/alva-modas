@@ -1,0 +1,5 @@
+.cart-diagnostics { margin: 24px 12px; padding: 16px; border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-foreground); font: 12px/1.6 var(--font-sans); overflow-wrap: anywhere; }
+.cart-diagnostics h2 { font-size: 20px; }
+.cart-diagnostics h3 { margin-top: 16px; font-size: 15px; }
+.cart-diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cart-diagnostics ul, .cart-diagnostics ol { padding-left: 24px; list-style: revert; }

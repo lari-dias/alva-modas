@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { CarrinhoProvider } from '../providers/CarrinhoProvider'
 import { CART_STORAGE_KEY } from '../services/carrinho-storage'
-import { CHECKOUT_PENDING_KEY } from '../services/checkout-tentativa'
+import { CHECKOUT_PENDING_KEY, iniciarTentativaCheckout } from '../services/checkout-tentativa'
 import { cartIdTeste, produtoTeste, respostaCarrinho } from './carrinho-fixture'
 import type { EmailStatus, PedidoConfirmado } from '../types/checkout'
 
@@ -19,6 +19,8 @@ describe('Checkout', () => {
   let emailStatus: EmailStatus
   let posts: Array<{ body: unknown; id: string | null }>
   let liberar: ((response: Response) => void) | undefined
+  let recuperacao: 'CONFIRMADA' | 'PROCESSANDO' | 'ENCERRADA_SEM_PEDIDO' | 'rede'
+  let checkoutAberto: boolean
 
   const pedido: PedidoConfirmado = {
     idPedido: 'a17a0000-0000-4000-8000-000000000088',
@@ -53,11 +55,14 @@ describe('Checkout', () => {
     emailStatus = 'ACEITO_PELO_SMTP'
     posts = []
     liberar = undefined
+    recuperacao = 'CONFIRMADA'
+    checkoutAberto = true
 
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL | Request, options: RequestInit = {}) => {
         const path = new URL(String(input)).pathname
+        if (path === '/checkout/status') return Response.json({ aberto: checkoutAberto })
 
         if (path === '/auth/me') {
           return Response.json({}, { status: 401 })
@@ -78,20 +83,26 @@ describe('Checkout', () => {
           return Response.json(respostaCarrinho(cartIdTeste, quantidade))
         }
 
-        if (path !== '/finalizar-compra') {
+        if (path.endsWith('/verificar')) {
+          if (recuperacao === 'rede') throw new TypeError('Failed to fetch')
+          return Response.json({ estado: recuperacao, pedido: recuperacao === 'CONFIRMADA' ? { ...pedido, emailStatus: 'PENDENTE' } : null })
+        }
+
+        if (!path.startsWith('/auth/checkout/tentativas/')) {
           throw new Error('Unexpected test URL')
         }
 
-        posts.push({
-          body: JSON.parse(String(options.body)),
-          id: new Headers(options.headers).get('X-Cart-Id'),
-        })
+        if (!path.endsWith('/confirmar')) {
+          posts.push({ body: JSON.parse(String(options.body)), id: new Headers(options.headers).get('X-Cart-Id') })
+          return Response.json({ id: path.split('/').at(-1), estado: 'PROCESSANDO' })
+        }
 
         if (modo === 'rede') {
           throw new TypeError('Failed to fetch')
         }
 
-        if (modo === '400' || modo === '409' || modo === '503') {
+        if (modo === '400' || modo === '409') return Response.json({ estado: 'ENCERRADA_SEM_PEDIDO', pedido: null })
+        if (modo === '503') {
           return Response.json(
             { message: 'Test API failure' },
             { status: Number(modo) },
@@ -103,14 +114,88 @@ describe('Checkout', () => {
         }
 
         if (modo === 'aguardando') {
-          return new Promise<Response>((resolve) => {
-            liberar = resolve
-          })
+          const resposta = await new Promise<Response>((resolve) => { liberar = resolve })
+          return Response.json({ estado: 'CONFIRMADA', pedido: await resposta.json() })
         }
 
-        return Response.json({ ...pedido, emailStatus }, { status: 201 })
+        return Response.json({ estado: 'CONFIRMADA', pedido: { ...pedido, emailStatus } }, { status: 201 })
       }),
     )
+  })
+
+  it('preserva sacola sem criar tentativa quando o checkout está em manutenção', async () => {
+    checkoutAberto = false
+    montar()
+    const user = await preencher()
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Estamos atualizando a loja')
+    expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).toBeNull()
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(cartIdTeste)
+    expect(posts).toHaveLength(0)
+  })
+
+  it('recupera confirmação após perda de resposta e libera novas compras', async () => {
+    iniciarTentativaCheckout(cartIdTeste)
+    montar()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Verificar confirmação' }))
+    expect(await screen.findByRole('heading', { name: 'Pedido confirmado' })).toBeVisible()
+    expect(screen.getByText(/aguardando envio/)).toBeVisible()
+    expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).toBeNull()
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBeNull()
+    expect(posts).toHaveLength(0)
+    const chamada = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/verificar'))!
+    expect(chamada[1]?.credentials).toBe('include')
+    expect(new Headers(chamada[1]?.headers).get('X-Checkout-Token')).toMatch(/^[a-f0-9]{64}$/)
+    await user.click(screen.getByRole('link', { name: 'Voltar à loja' }))
+    expect(await screen.findByRole('button', { name: `Adicionar ${produtoTeste.nome} ao carrinho` })).toBeEnabled()
+  })
+
+  it.each(['PROCESSANDO', 'rede'] as const)('preserva proteção durante recuperação: %s', async (estado) => {
+    recuperacao = estado
+    iniciarTentativaCheckout(cartIdTeste)
+    const registro = localStorage.getItem(CHECKOUT_PENDING_KEY)
+    montar()
+    await userEvent.click(await screen.findByRole('button', { name: 'Verificar confirmação' }))
+    await screen.findByText(estado === 'PROCESSANDO' ? /ainda está em processamento/ : /Não foi possível verificar o resultado/)
+    expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).toBe(registro)
+    expect(posts).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Confirmar pedido' })).toBeNull()
+  })
+
+  it('libera carrinho após encerramento comprovado sem pedido', async () => {
+    recuperacao = 'ENCERRADA_SEM_PEDIDO'
+    iniciarTentativaCheckout(cartIdTeste)
+    montar()
+    await userEvent.click(await screen.findByRole('button', { name: 'Verificar confirmação' }))
+    expect(await screen.findByRole('button', { name: 'Confirmar pedido' })).toBeEnabled()
+    expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).toBeNull()
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(cartIdTeste)
+    expect(posts).toHaveLength(0)
+    expect(screen.getByRole('status')).toHaveTextContent('encerrada sem pedido')
+  })
+
+  it('remove o erro incerto após verificar encerramento e mantém a mensagem de recuperação', async () => {
+    modo = 'rede'
+    recuperacao = 'ENCERRADA_SEM_PEDIDO'
+    montar()
+    const user = await preencher()
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
+    await user.click(await screen.findByRole('button', { name: 'Verificar confirmação' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar pedido' })).toBeEnabled())
+    expect(screen.getByRole('status')).toHaveTextContent('encerrada sem pedido')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).toBeNull()
+    expect(posts).toHaveLength(1)
+  })
+
+  it('preserva tentativa legada sem expor consulta apenas por UUID', async () => {
+    localStorage.setItem(CHECKOUT_PENDING_KEY, cartIdTeste)
+    montar()
+    await userEvent.click(await screen.findByRole('button', { name: 'Verificar confirmação' }))
+    expect(await screen.findByText(/tentativa antiga precisa de conferência/)).toBeVisible()
+    expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).toBe(cartIdTeste)
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/tentativas/'))).toBe(false)
   })
 
   afterEach(() => {
@@ -284,7 +369,7 @@ describe('Checkout', () => {
     ).toBeDisabled()
 
     expect(screen.getByLabelText('Nome completo')).toBeDisabled()
-    expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).toBe(cartIdTeste)
+    expect(JSON.parse(localStorage.getItem(CHECKOUT_PENDING_KEY)!).carrinhoId).toBe(cartIdTeste)
 
     fireEvent.submit(form)
     expect(posts).toHaveLength(1)
@@ -368,14 +453,11 @@ describe('Checkout', () => {
       ).toBeNull()
 
       expect(posts).toHaveLength(1)
-      expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).toBe(cartIdTeste)
+      expect(JSON.parse(localStorage.getItem(CHECKOUT_PENDING_KEY)!).carrinhoId).toBe(cartIdTeste)
       expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(cartIdTeste)
 
-      expect(
-        Object.values(localStorage).every(
-          (value) => value === cartIdTeste,
-        ),
-      ).toBe(true)
+      expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).not.toContain('cliente@example.test')
+      expect(localStorage.getItem(CHECKOUT_PENDING_KEY)).not.toContain('Maria Silva')
 
       view.unmount()
       montar()

@@ -128,9 +128,11 @@ describe('CarrinhoService', () => {
   it('revalidates stock and activity on reads and permits removal of unavailable products', async () => {
     const cart = await adicionar(2);
     produtos[0].estoque = 1;
-    await expect(service.consultar(cart.idCarrinho)).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    expect((await service.consultar(cart.idCarrinho)).itens[0]).toMatchObject({
+      quantidade: 2,
+      disponivel: false,
+      produto: { estoque: 1 },
+    });
     produtos[0].ativo = false;
     expect(
       (
@@ -189,8 +191,9 @@ describe('CarrinhoService', () => {
   it('distinguishes missing carts from missing products and preserves the cart', async () => {
     const cart = await adicionar();
     produtos = [];
-    await expect(service.consultar(cart.idCarrinho)).rejects.toMatchObject({
-      response: { code: 'PRODUCT_NOT_FOUND' },
+    expect((await service.consultar(cart.idCarrinho)).itens[0]).toMatchObject({
+      disponivel: false,
+      produto: { id: idProduto(1), estoque: 0 },
     });
     await expect(service.consultar(idProduto(99))).rejects.toMatchObject({
       response: { code: 'CART_NOT_FOUND' },

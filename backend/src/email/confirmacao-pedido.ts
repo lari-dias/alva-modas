@@ -1,5 +1,5 @@
-
 export enum StatusEnvioEmail {
+  PENDENTE = 'PENDENTE',
   ACEITO_PELO_SMTP = 'ACEITO_PELO_SMTP',
   ACEITO_PELA_API = 'ACEITO_PELA_API',
   FALHOU = 'FALHOU',

@@ -1,4 +1,3 @@
-
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
@@ -16,20 +15,26 @@ export class ResendService {
 
   async enviarConfirmacao(
     pedido: ConfirmacaoPedido,
+    idempotencyKey?: string,
   ): Promise<StatusEnvioEmail> {
     if (!this.resend) return StatusEnvioEmail.DESABILITADO;
 
     try {
-      const { data, error } = await this.resend.emails.send({
-        from: this.config.get<string>(
-          'RESEND_FROM',
-          'Alva Modas <onboarding@resend.dev>',
-        ),
-        to: pedido.emailCliente,
-        subject: `Alva Modas - Pedido ${pedido.idPedido} confirmado`,
-        html: confirmacaoHtml(pedido),
-        text: confirmacaoTexto(pedido),
-      });
+      const { data, error } = await this.resend.emails.send(
+        {
+          from: this.config.get<string>(
+            'RESEND_FROM',
+            'Alva Modas <onboarding@resend.dev>',
+          ),
+          to: pedido.emailCliente,
+          subject: `Alva Modas - Pedido ${pedido.idPedido} confirmado`,
+          html: confirmacaoHtml(pedido),
+          text: confirmacaoTexto(pedido),
+        },
+        idempotencyKey
+          ? { idempotencyKey, signal: AbortSignal.timeout(15000) }
+          : undefined,
+      );
 
       return error || !data?.id
         ? StatusEnvioEmail.FALHOU

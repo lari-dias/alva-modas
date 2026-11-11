@@ -13,18 +13,18 @@ import {
 import { CarrinhoId } from '../carrinho/carrinho-id.decorator';
 import { FinalizarCompraDto } from './dto/finalizar-compra.dto';
 import { CompraRespostaDto } from './dto/compra-resposta.dto';
-import { FinalizarCompraService } from './finalizar-compra.service';
+import { CheckoutDeploymentService } from './checkout-deployment.service';
 
 @ApiTags('Finalização da compra')
 @Controller('finalizar-compra')
 export class FinalizarCompraController {
-  constructor(private readonly finalizarCompra: FinalizarCompraService) {}
+  constructor(private readonly deployment: CheckoutDeploymentService) {}
 
   @Post()
   @ApiOperation({
     summary: 'Confirmar compra e registrar pedido',
     description:
-      'Registra pedido e itens e desconta estoque em uma transação, sem cobrança. Remove o carrinho após commit e tenta enviar e-mail. Requisições simultâneas no mesmo carrinho retornam 409; uma nova tentativa após o sucesso retorna 404. Totais em centavos. Carrinhos e proteção contra duplicação são locais ao processo.',
+      'Retorna 503 durante a transição e 410 somente após retirada explícita com checkout pausado e drenado. Nunca confirma pedidos pelo fluxo antigo.',
   })
   @ApiHeader({
     name: 'X-Cart-Id',
@@ -50,6 +50,8 @@ export class FinalizarCompraController {
     @Body() dto: FinalizarCompraDto,
     @CarrinhoId(new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<CompraRespostaDto> {
-    return this.finalizarCompra.finalizar(id, dto);
+    void id;
+    void dto;
+    return this.deployment.legado();
   }
 }

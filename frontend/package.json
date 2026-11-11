@@ -8,8 +8,9 @@
     "build": "tsc -b && vite build",
     "build:prod": "node scripts/check-production-env.mjs && npm run build",
     "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit --incremental false && tsc -p tsconfig.node.json --noEmit --incremental false",
     "preview": "vite preview",
-    "test": "vitest run && node --test scripts/production-env.check.mjs",
+    "test": "vitest run && node --test scripts/production-env.check.mjs scripts/api-proxy.check.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {

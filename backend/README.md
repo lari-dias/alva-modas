@@ -13,13 +13,22 @@ Copy-Item .env.example .env
 
 Ajuste as credenciais no .env e crie o banco indicado em DB_DATABASE no PostgreSQL.
 
-Configure também `JWT_SECRET` antes de iniciar a API, conforme a seção de autenticação abaixo. Execute as migrations pendentes com `npm.cmd run migration:run`.
+Configure `JWT_SECRET` e `CHECKOUT_ADMIN_TOKEN` com segredos aleatórios distintos de pelo menos 32 caracteres antes de iniciar a API. Execute as migrations pendentes com `npm.cmd run migration:run`.
 
 ```powershell
 npm.cmd run start:dev
 ```
 
 Swagger: http://localhost:3000/api/docs
+
+As migrations deixam o checkout fechado. Depois de iniciar a API, execute na pasta backend, apenas contra desenvolvimento:
+
+```powershell
+node --env-file=.env scripts/checkout-control.mjs pause
+node --env-file=.env scripts/checkout-control.mjs open
+```
+
+O modelo define CHECKOUT_CONTROL_URL=http://localhost:3000 e NODE_ENV=development. O token administrativo fica somente no backend. Em produção, siga [CHECKOUT-RECOVERY.md](../deploy/CHECKOUT-RECOVERY.md).
 
 ## Preparação de produção
 
@@ -130,7 +139,7 @@ Os carrinhos são armazenados em um `Map` por processo, sem persistência. Reini
 
 Limites definidos em `src/carrinho/carrinho.constants.ts`: 20 produtos distintos, 100 unidades por produto e 100 unidades totais por carrinho, 1.000 carrinhos simultâneos. Expiração após 30 minutos sem operação bem-sucedida, com limpeza a cada minuto e antes das operações. Atingir a capacidade retorna 503 até haver espaço. Operações simultâneas no mesmo carrinho retornam 409; o cliente pode tentar novamente após concluir a operação anterior.
 
-Todos os itens são consultados novamente no banco a cada operação. Preços e estoque podem mudar; um produto inexistente retorna 404, inativo ou com estoque insuficiente retorna 409. A operação com erro preserva o carrinho anterior. Para remover um item indisponível, envie quantidade zero; os demais itens continuam sujeitos à validação. Um UUID desconhecido ou expirado retorna 404 e não cria um novo carrinho. Para começar outro, omita o header na primeira adição.
+Todos os itens são consultados novamente no banco a cada operação. GET retorna indisponíveis com disponivel=false, inclusive após recarga sem cache, usando os últimos dados conhecidos para produtos excluídos. Reduções e remoções continuam permitidas; aumentos e adições revalidam disponibilidade. Um UUID desconhecido ou expirado retorna CART_NOT_FOUND e não cria outra sacola.
 
 ### Testar no Swagger
 
@@ -156,34 +165,17 @@ Os testes HTTP usam repositórios simulados e não gravam no PostgreSQL.
 
 ## Finalização da compra
 
-`POST /finalizar-compra` exige `X-Cart-Id` com o UUID retornado pelo carrinho e aceita somente nome e e-mail:
+O frontend utiliza POST /auth/checkout/tentativas/:id para preparar, POST /auth/checkout/tentativas/:id/confirmar para confirmar e POST /auth/checkout/tentativas/:id/verificar para recuperar o resultado. O UUID da tentativa é a chave persistente. Os headers X-Cart-Id, X-Checkout-Token e X-Checkout-Authenticated identificam sacola, credencial de recuperação e exigência de sessão. Nome e e-mail são os únicos dados comerciais aceitos do cliente; preços e totais são calculados no backend.
 
-```json
-{
-  "nome": "Maria Silva",
-  "email": "cliente@example.test"
-}
-```
+Tentativas autenticadas exigem o mesmo cliente. Visitantes precisam do segredo aleatório, cujo hash é salvo no banco. UUID sozinho não autoriza consulta. Dados e resultados não são armazenados em caches públicos. A consulta pode encerrar uma tentativa não recebida ou abandonada sem pedido; a confirmação tardia dessa mesma tentativa não gera compra.
 
-O nome é aparado e deve ter entre 2 e 120 caracteres; o e-mail é validado e limitado a 254 caracteres. Preços, totais ou campos adicionais no body são rejeitados. O endpoint rejeita carrinhos vazios (400), inexistentes, expirados ou já consumidos (404), e produtos inativos ou sem estoque (409).
+Pedido, itens históricos, estoque, resultado da tentativa e outbox são gravados na mesma transação PostgreSQL. Produtos são bloqueados com FOR UPDATE em ordem de UUID. Repetições, inclusive após COMMIT com resposta perdida, retornam o resultado persistido, sem novo pedido ou baixa de estoque. A sacola é bloqueada contra alterações durante a tentativa. Carrinhos ainda não preparados continuam em memória e podem se perder em reinícios.
 
-A transação TypeORM consulta os produtos novamente, bloqueia suas linhas com `pessimistic_write` (`FOR UPDATE`) em ordem de UUID e valida preço e disponibilidade. Pedido, itens com nome/preço históricos e desconto de estoque são gravados na mesma transação. Valores são calculados em centavos inteiros e convertidos para strings com duas casas decimais ao persistir. Valores que ultrapassam `numeric(10,2)` são rejeitados com 422. Não há cobrança real.
+O endpoint antigo POST /finalizar-compra não confirma novos pedidos: responde manutenção ou retirada explícita. Isso impede que abas antigas contornem a idempotência. O fluxo de compra como visitante permanece disponível no frontend atualizado. As migrations aditivas não são executadas no build/start.
 
-Após o commit, o carrinho é removido e o e-mail é tentado. A resposta HTTP 201 contém `idPedido`, `status`, `itens`, `totalCentavos` e `emailStatus`. Os itens incluem produtoId, nomeProduto, quantidade, precoUnitarioCentavos e subtotalCentavos.
+Com CHECKOUT_OUTBOX_ENABLED=true, o processador envia os eventos persistentes. Resend usa chave estável e repetição dentro da janela segura. SMTP continua suportado, mas uma tentativa sem confirmação exige revisão, sem reenvio automático. Sem processador habilitado, os eventos ficam pendentes. PENDENTE, ACEITO_PELA_API, ACEITO_PELO_SMTP e FALHOU descrevem envio; nenhum deles desfaz o pedido. Aceitação não comprova entrega na caixa do destinatário.
 
-O campo `emailStatus` pode ser:
-
-- `ACEITO_PELO_SMTP`: o servidor SMTP aceitou a mensagem; não garante entrega na caixa do cliente.
-- `FALHOU`: não houve confirmação de envio. O pedido e o desconto de estoque permanecem confirmados.
-- `DESABILITADO`: SMTP não habilitado; nenhuma mensagem foi enviada.
-
-Para testar pelo Swagger, crie um carrinho, copie seu UUID e abra **Finalização da compra → POST /finalizar-compra → Try it out**. Informe `X-Cart-Id` e o JSON acima. **Execute grava uma venda e desconta estoque**: use apenas um banco de testes e execute quando desejar realizar essa operação. Repetir após sucesso retorna 404, pois o carrinho foi consumido.
-
-### Concorrência e limites de idempotência
-
-O bloqueio em memória do carrinho abrange toda a transação e impede também alterações de quantidade durante a finalização. Uma segunda operação simultânea no mesmo UUID recebe 409. Em caso de rollback, o carrinho é mantido e desbloqueado. A exclusão só acontece após o retorno bem-sucedido da transação. Os bloqueios de linha do PostgreSQL protegem o estoque entre carrinhos diferentes e processos que usam essa estratégia.
-
-Essa proteção contra pedidos duplicados depende do estado em memória do processo; não há chave de idempotência persistente nem recuperação da resposta anterior. Reinicializações perdem carrinhos. Uma falha de conexão durante COMMIT pode deixar o resultado incerto: o banco pode ter confirmado mesmo que a aplicação tenha recebido erro. Não recrie/reenvie a compra automaticamente sem conferir o banco. Múltiplas instâncias não compartilham carrinhos. O envio de e-mail não possui outbox, persistência do status ou repetição automática: uma interrupção após commit pode impedir o envio, preservando a venda. Essas limitações exigiriam evolução específica da persistência, fora desta etapa.
+Carrinho e checkout compartilham limite de 120 requisições/IP/minuto no processo, além do limite separado de autenticação. Produção usa proxy Vercel de mesma origem, cookie Path=/api/auth, HttpOnly, Secure e SameSite=Strict. Desenvolvimento direto usa Path=/auth. Consulte [implantação, recuperação e rollback](../deploy/CHECKOUT-RECOVERY.md) para configuração, pausa/drenagem e limitações de marcadores antigos sem token.
 
 ### SMTP de desenvolvimento com Mailpit
 
@@ -196,6 +188,7 @@ docker run -d --name alva-mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 
 Adicione ao seu `.env`, mantendo as credenciais do PostgreSQL:
 
 ```dotenv
+CHECKOUT_OUTBOX_ENABLED=true
 SMTP_ENABLED=true
 SMTP_HOST=127.0.0.1
 SMTP_PORT=1025
@@ -216,4 +209,4 @@ npm.cmd test -- --runInBand
 npm.cmd run test:e2e -- --runInBand
 ```
 
-Os testes de finalização usam um banco transacional simulado para verificar rollback, concorrência, consumo do carrinho, preços atuais e falha de e-mail. Não conectam ao PostgreSQL nem comprovam locks em uma instância real. Os testes de e-mail usam Nodemailer com um servidor SMTP capturador em 127.0.0.1 e porta efêmera, sem DNS reverso e sem entrega externa. Incluem rejeição SMTP e escape de HTML. Nenhuma compra é criada no banco configurado pelo `.env` durante essas suítes.
+Os testes unitários e HTTP comuns usam repositórios e transações simulados. A suíte checkout-persistente.e2e-spec.ts é opt-in (CHECKOUT_ISOLATED_TESTS=true) e executa migrations, TRUNCATE e rollback somente em 127.0.0.1:55439/alva_checkout_test descartável. Não usa o .env do banco da aplicação. Testa concorrência real, COMMIT com resposta perdida, permissões e outbox. Os testes SMTP usam capturador em loopback e porta efêmera; Resend é simulada, sem envio externo. Não alterar a suíte isolada para um banco remoto.

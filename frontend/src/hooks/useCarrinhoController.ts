@@ -1,3 +1,4 @@
+import { assinarAtivacaoDiagnostico, diagnosticoCarrinhoAtivo, registrarCarrinho } from '../services/carrinho-diagnostico'
 import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { adicionarAoCarrinho, atualizarCarrinho, CarrinhoExpirado, consultarCarrinho, ErroCarrinho } from '../services/carrinho'
@@ -11,6 +12,7 @@ const chave = (id: string | null) => ['carrinho', id] as const
 const semIdNoServidor = () => null
 
 export function useCarrinhoController() {
+  const diagnosticoAtivo = useSyncExternalStore(assinarAtivacaoDiagnostico, diagnosticoCarrinhoAtivo, () => false)
   const client = useQueryClient()
   const id = useSyncExternalStore(assinarCarrinhoId, lerCarrinhoId, semIdNoServidor)
   const checkoutPendente = useSyncExternalStore(assinarTentativaCheckout, lerTentativaCheckout, semIdNoServidor)
@@ -51,7 +53,9 @@ export function useCarrinhoController() {
     scope: { id: 'alva-modas:carrinho' },
     retry: false,
     onMutate: async () => {
+      registrarCarrinho('cancelando consultas')
       await client.cancelQueries({ queryKey: ['carrinho'] })
+      registrarCarrinho('consultas canceladas')
       setErro(null)
       setFeedback(null)
     },
@@ -71,10 +75,7 @@ export function useCarrinhoController() {
           if (!cartId) throw new CarrinhoExpirado()
           let quantidade = 0
           if (operacao.tipo === 'ajustar') {
-            const atual = operacao.delta < 0
-              ? client.getQueryData<Carrinho>(chave(cartId))
-              : await consultarCarrinho(cartId)
-            if (!atual) throw new ErroCarrinho('Consulte o carrinho antes de alterar a quantidade.')
+            const atual = await consultarCarrinho(cartId)
             client.setQueryData(chave(cartId), atual)
             const item = atual.itens.find((item) => item.produto.id === operacao.produtoId)
             if (!item) throw new ErroCarrinho('O produto não está mais no carrinho.', 404)
@@ -95,10 +96,12 @@ export function useCarrinhoController() {
       }
     }),
     onSuccess: (_carrinho, operacao) => {
+      registrarCarrinho('mutation concluída')
       setErro(null)
       setFeedback(operacao.tipo === 'adicionar' ? 'Produto adicionado ao carrinho.' : operacao.tipo === 'remover' ? 'Produto removido do carrinho.' : operacao.tipo === 'reiniciar' ? 'Adicione produtos para começar um novo carrinho.' : 'Quantidade atualizada.')
     },
     onError: (error) => {
+      registrarCarrinho('mutation falhou')
       setErro(error instanceof ErroCarrinho ? error.message : 'Não foi possível atualizar o carrinho. Consulte os dados antes de tentar novamente.')
     },
     onSettled: async () => {
@@ -120,6 +123,7 @@ export function useCarrinhoController() {
 
   return {
     aberto, abrir, fechar, focoRetorno, carrinho, id, ocupado, quantidade,
+    checkoutPendente: Boolean(checkoutPendente),
     concluirCompra: (cartId: string) => {
       if (lerCarrinhoId() === cartId) salvarCarrinhoId(null)
       client.removeQueries({ queryKey: chave(cartId), exact: true })
@@ -132,11 +136,30 @@ export function useCarrinhoController() {
     feedback,
     dadosDesatualizados: consulta.isError || Boolean(carrinho?.itens.some((item) => item.disponivel === false)) || Boolean(checkoutPendente && mutacoes === 0),
     produtoPendente: mutation.isPending && mutation.variables.tipo === 'adicionar' ? mutation.variables.produtoId : null,
-    adicionar: (produtoId: string) => { abrir(); mutation.mutate({ tipo: 'adicionar', produtoId }) },
+    adicionar: (produtoId: string) => { registrarCarrinho('handler adicionar'); abrir(); mutation.mutate({ tipo: 'adicionar', produtoId }) },
     ajustar: (produtoId: string, delta: 1 | -1) => mutation.mutate({ tipo: 'ajustar', produtoId, delta }),
     remover: (produtoId: string) => mutation.mutate({ tipo: 'remover', produtoId }),
     reiniciar: () => mutation.mutate({ tipo: 'reiniciar' }),
     recarregar: () => { setErro(null); setFeedback(null); if (id) void consulta.refetch() },
+    diagnostico: diagnosticoAtivo ? {
+      consulta: { estado: consulta.status, rede: consulta.fetchStatus },
+      mutation: { estado: mutation.status, pausada: mutation.isPaused, pendentes: mutacoes },
+      cartIdEmMemoria: Boolean(id), checkoutPendenteEmMemoria: Boolean(checkoutPendente),
+      erroLocal: Boolean(erro), erroConsulta: consulta.isError,
+      motivos: (produtoId: string, estoque: number) => {
+        const item = carrinho?.itens.find(item => item.produto.id === produtoId)
+        const disponivel = item ? Math.min(estoque, item.produto.estoque) : estoque
+        return [
+          mutacoes > 0 && 'mutation pendente',
+          consulta.isFetching && 'consulta em andamento',
+          Boolean(checkoutPendente) && 'checkout pendente',
+          !(disponivel > (item?.quantidade ?? 0)) && 'estoque insuficiente',
+          !(quantidade < LIMITES_CARRINHO.unidades) && 'limite de unidades',
+          !(Boolean(item) || (carrinho?.itens.length ?? 0) < LIMITES_CARRINHO.itens) && 'limite de produtos',
+          !((item?.quantidade ?? 0) < LIMITES_CARRINHO.unidadesPorItem) && 'limite por produto',
+        ].filter((motivo): motivo is string => Boolean(motivo))
+      },
+    } : null,
     podeAdicionar: (produtoId: string, estoque: number) => {
       const item = carrinho?.itens.find((item) => item.produto.id === produtoId)
       const disponivel = item ? Math.min(estoque, item.produto.estoque) : estoque

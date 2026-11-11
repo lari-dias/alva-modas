@@ -6,6 +6,7 @@ import type { PedidoConfirmado, EmailStatus } from '../types/checkout'
 import { formatarCentavos } from '../services/formatar-preco'
 
 const mensagensEmail: Record<EmailStatus, string> = {
+  PENDENTE: 'Seu pedido foi confirmado. O e-mail de confirmação está aguardando envio.',
   ACEITO_PELO_SMTP:
     'A confirmação foi aceita pelo servidor SMTP. Isso não garante a entrega na sua caixa de entrada.',
   ACEITO_PELA_API:

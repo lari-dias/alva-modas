@@ -1,3 +1,4 @@
+import { registrarCarrinho } from './carrinho-diagnostico'
 import { API_URL } from './api'
 import { isProduto } from './produtos'
 import { isCartId } from './carrinho-storage'
@@ -39,6 +40,7 @@ async function requisitarCarrinho(method: 'GET' | 'POST' | 'PUT', id?: string, b
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (id) headers['X-Cart-Id'] = id
   if (body) headers['Content-Type'] = 'application/json'
+  registrarCarrinho(`${method} iniciado`)
   let response: Response
   try {
     response = await fetch(`${API_URL}/carrinho`, {
@@ -46,9 +48,11 @@ async function requisitarCarrinho(method: 'GET' | 'POST' | 'PUT', id?: string, b
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
     })
   } catch {
+    registrarCarrinho('falha de rede ou cancelamento')
     if (signal?.aborted) throw new DOMException('Consulta cancelada.', 'AbortError')
     throw new ErroCarrinho('Não foi possível confirmar a operação. Consulte o carrinho antes de tentar novamente.')
   }
+  registrarCarrinho('resposta HTTP', response.status)
   if (!response.ok) {
     const payload: unknown = await response.json().catch(() => null)
     const code = payload && typeof payload === 'object' && 'code' in payload && typeof payload.code === 'string' ? payload.code : undefined
@@ -63,8 +67,8 @@ async function requisitarCarrinho(method: 'GET' | 'POST' | 'PUT', id?: string, b
     throw new ErroCarrinho(mensagem ?? 'Não foi possível atualizar o carrinho.', response.status, code)
   }
   let carrinho: unknown
-  try { carrinho = await response.json() } catch { throw new ErroCarrinho('Resposta inválida do carrinho. Consulte os dados antes de tentar novamente.') }
-  if (!isCarrinho(carrinho) || (id && carrinho.idCarrinho !== id)) throw new ErroCarrinho('Resposta inválida do carrinho.')
+  try { carrinho = await response.json() } catch { registrarCarrinho('resposta inválida'); throw new ErroCarrinho('Resposta inválida do carrinho. Consulte os dados antes de tentar novamente.') }
+  if (!isCarrinho(carrinho) || (id && carrinho.idCarrinho !== id)) { registrarCarrinho('resposta inválida'); throw new ErroCarrinho('Resposta inválida do carrinho.') }
   return carrinho
 }
 

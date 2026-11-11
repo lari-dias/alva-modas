@@ -1,4 +1,3 @@
-
 import { plainToInstance } from 'class-transformer';
 import {
   IsInt,
@@ -13,6 +12,16 @@ import {
 } from 'class-validator';
 
 class Environment {
+  @IsString()
+  API_PROXY_SECRET = '';
+
+  @IsString()
+  CHECKOUT_ADMIN_TOKEN = '';
+
+  @IsIn(['/auth', '/api/auth'])
+  JWT_COOKIE_PATH = '/auth';
+  @IsBoolean()
+  CHECKOUT_OUTBOX_ENABLED = false;
   @IsIn(['development', 'test', 'production'])
   NODE_ENV = 'development';
 
@@ -101,6 +110,10 @@ function booleanEnvironment(value: unknown, key: string): boolean {
 export function validateEnvironment(config: Record<string, unknown>) {
   const environment = plainToInstance(Environment, {
     ...config,
+    CHECKOUT_OUTBOX_ENABLED: booleanEnvironment(
+      config.CHECKOUT_OUTBOX_ENABLED,
+      'CHECKOUT_OUTBOX_ENABLED',
+    ),
     PORT: Number(config.PORT ?? 3000),
     DB_PORT: Number(config.DB_PORT ?? 5432),
     SMTP_PORT: Number(config.SMTP_PORT ?? 1025),
@@ -163,10 +176,20 @@ export function validateEnvironment(config: Record<string, unknown>) {
     }
 
     if (!environment.RESEND_API_KEY && !environment.SMTP_ENABLED) {
-      throw new Error(
-        'Configure RESEND_API_KEY ou habilite SMTP em produção',
-      );
+      throw new Error('Configure RESEND_API_KEY ou habilite SMTP em produção');
     }
+    if (
+      environment.API_PROXY_SECRET.length < 32 ||
+      environment.CHECKOUT_ADMIN_TOKEN.length < 32 ||
+      environment.API_PROXY_SECRET === environment.CHECKOUT_ADMIN_TOKEN
+    )
+      throw new Error(
+        'Configure API_PROXY_SECRET e CHECKOUT_ADMIN_TOKEN distintos, com pelo menos 32 caracteres.',
+      );
+    if (environment.JWT_COOKIE_PATH !== '/api/auth')
+      throw new Error(
+        'JWT_COOKIE_PATH deve ser /api/auth em produção com proxy.',
+      );
   }
 
   return environment;

@@ -22,6 +22,7 @@ import { CarrinhoId } from './carrinho-id.decorator';
 import { AdicionarItemDto } from './dto/adicionar-item.dto';
 import { AtualizarItemDto } from './dto/atualizar-item.dto';
 import { CarrinhoRespostaDto } from './dto/carrinho-resposta.dto';
+import { CarrinhoCheckoutService } from './carrinho-checkout.service';
 
 @ApiTags('Carrinho')
 @ApiBadRequestResponse({
@@ -38,7 +39,10 @@ import { CarrinhoRespostaDto } from './dto/carrinho-resposta.dto';
 })
 @Controller('carrinho')
 export class CarrinhoController {
-  constructor(private readonly carrinhoService: CarrinhoService) {}
+  constructor(
+    private readonly carrinhoService: CarrinhoService,
+    private readonly checkout: CarrinhoCheckoutService,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -62,14 +66,16 @@ export class CarrinhoController {
     @CarrinhoId(new ParseUUIDPipe({ version: '4', optional: true }))
     id?: string,
   ) {
-    return this.carrinhoService.adicionar(dto, id);
+    return this.checkout.executar(id, () =>
+      this.carrinhoService.adicionar(dto, id),
+    );
   }
 
   @Get()
   @ApiOperation({
     summary: 'Consultar carrinho',
     description:
-      'Reconsulta preços, status e estoque atuais. Não reserva estoque. Retorna 409 se algum produto ficou indisponível; ajuste ou remova o item com PUT.',
+      'Reconsulta preços, status e estoque atuais. Não reserva estoque. Itens indisponíveis retornam disponivel=false e podem ser reduzidos ou removidos com PUT.',
   })
   @ApiHeader({
     name: 'X-Cart-Id',
@@ -97,6 +103,8 @@ export class CarrinhoController {
     @Body() dto: AtualizarItemDto,
     @CarrinhoId(new ParseUUIDPipe({ version: '4' })) id: string,
   ) {
-    return this.carrinhoService.atualizar(dto, id);
+    return this.checkout.executar(id, () =>
+      this.carrinhoService.atualizar(dto, id),
+    );
   }
 }

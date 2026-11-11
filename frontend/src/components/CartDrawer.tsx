@@ -20,11 +20,12 @@ export function CartDrawer() {
         </div>
         <div className="cart-drawer-body" aria-busy={cart.ocupado}>
           {cart.erro && <div className="cart-message cart-error" role="alert"><p>{cart.erro}</p><div className="cart-error-actions">
+            {cart.checkoutPendente && <Link to="/checkout" onClick={cart.fechar}>Verificar confirmação</Link>}
             {cart.id && <button type="button" onClick={cart.recarregar} disabled={cart.ocupado}>Atualizar carrinho</button>}
             <button type="button" onClick={cart.reiniciar} disabled={cart.ocupado}>Começar novo carrinho</button>
           </div></div>}
           {cart.feedback && <p className="cart-message cart-feedback" role="status">{cart.feedback}</p>}
-          {cart.ocupado && <p className="cart-loading" role="status"><LoaderCircle size={17} className="motion-safe:animate-spin" aria-hidden="true" />{cart.carregando ? 'Carregando carrinho...' : 'Atualizando carrinho...'}</p>}
+          {cart.ocupado && !cart.checkoutPendente && <p className="cart-loading" role="status"><LoaderCircle size={17} className="motion-safe:animate-spin" aria-hidden="true" />{cart.carregando ? 'Carregando carrinho...' : 'Atualizando carrinho...'}</p>}
           {itens.length > 0 ? (
             <ul className="cart-items">{itens.map((item) => <CartItem key={item.produto.id} item={item} ocupado={cart.ocupado} desatualizado={cart.dadosDesatualizados} unidades={cart.quantidade} onAjustar={cart.ajustar} onRemover={cart.remover} />)}</ul>
           ) : !cart.ocupado && !cart.erro ? (

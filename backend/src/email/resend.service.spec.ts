@@ -1,10 +1,6 @@
-
 import { ConfigService } from '@nestjs/config';
 import { ResendService } from './resend.service';
-import {
-  ConfirmacaoPedido,
-  StatusEnvioEmail,
-} from './confirmacao-pedido';
+import { ConfirmacaoPedido, StatusEnvioEmail } from './confirmacao-pedido';
 
 const mockSend = jest.fn();
 
@@ -78,9 +74,10 @@ describe('ResendService', () => {
         from: 'Alva Modas <onboarding@resend.dev>',
         to: pedido.emailCliente,
         subject: `Alva Modas - Pedido ${pedido.idPedido} confirmado`,
-        html: expect.any(String),
-        text: expect.any(String),
+        html: expect.any(String) as string,
+        text: expect.any(String) as string,
       }),
+      undefined,
     );
   });
 
@@ -95,6 +92,18 @@ describe('ResendService', () => {
     expect(await service.enviarConfirmacao(pedido)).toBe(
       StatusEnvioEmail.FALHOU,
     );
+  });
+
+  it('encaminha a chave persistente de idempotência à Resend', async () => {
+    mockSend.mockResolvedValue({ data: { id: 'email-123' }, error: null });
+    await criarService('re_test_key').enviarConfirmacao(
+      pedido,
+      'checkout/pedido-123',
+    );
+    expect(mockSend).toHaveBeenCalledWith(expect.any(Object), {
+      idempotencyKey: 'checkout/pedido-123',
+      signal: expect.any(AbortSignal) as AbortSignal,
+    });
   });
 
   it('retorna FALHOU quando a API não retorna um ID', async () => {
