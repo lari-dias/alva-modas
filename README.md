@@ -8,7 +8,7 @@ O projeto reúne interface responsiva, API REST, autenticação de clientes e pe
 
 **[Acessar a loja →](https://alva-modas.vercel.app/)**
 
-> Projeto desenvolvido para estudo, portfólio e demonstração técnica. Não realiza cobranças ou entregas reais. Este README descreve a versão estável da branch `main`.
+> Projeto desenvolvido para estudo, portfólio e demonstração técnica. Não realiza cobranças ou entregas reais. A versão de entrega do desafio técnico está na branch `correcao-auditoria-entrega`, descrita neste README. A demonstração publicada no link acima tem implantação independente desta branch.
 
 ## Tecnologias
 
@@ -100,10 +100,10 @@ alva-modas/
 
 A versão de Node utilizada no projeto está definida em [`.nvmrc`](.nvmrc).
 
-### 1. Clonar a versão estável
+### 1. Clonar a versão de entrega
 
 ```bash
-git clone --branch main https://github.com/lari-dias/alva-modas.git
+git clone --branch correcao-auditoria-entrega https://github.com/lari-dias/alva-modas.git
 cd alva-modas
 ```
 
@@ -139,7 +139,7 @@ Crie um banco PostgreSQL exclusivo para desenvolvimento e configure no `backend/
 - `FRONTEND_URL=http://localhost:5173`.
 - `JWT_COOKIE_SECURE=false` para desenvolvimento local em HTTP.
 
-Para gerar o segredo JWT localmente:
+Para gerar os segredos locais, execute o comando abaixo separadamente para `JWT_SECRET` e `CHECKOUT_ADMIN_TOKEN` e use resultados distintos:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
@@ -157,7 +157,7 @@ Os arquivos `.env` reais devem permanecer fora do Git.
 
 ### 4. Preparar o banco
 
-Na pasta `backend`, com a conexão de desenvolvimento configurada:
+Com o PostgreSQL em execução e o banco de desenvolvimento já criado, confirme que `DB_*` aponta para esse banco. O usuário configurado precisa de permissão para criar as tabelas pelas migrations. Na pasta `backend`, execute:
 
 ```bash
 npm run migration:run
@@ -165,6 +165,8 @@ npm run seed:produtos
 ```
 
 O seed cadastra o catálogo demonstrativo com 12 produtos. Ele é executado separadamente e preserva os produtos já existentes.
+
+As migrations criam também as tabelas de tentativas, outbox e controle do checkout. Elas não são executadas automaticamente ao iniciar a API.
 
 ### 5. Iniciar a aplicação
 
@@ -186,14 +188,17 @@ npm run dev
 | API | http://localhost:3000 |
 | Swagger | http://localhost:3000/api/docs |
 
-As migrations deixam o checkout fechado. Com a API local em execução, abra outro terminal na pasta `backend` e libere somente seu banco de desenvolvimento:
+### 6. Ativar o checkout local
+
+As migrations deixam o checkout fechado por padrão. Com a API local em execução e `CHECKOUT_ADMIN_TOKEN` preenchido no `backend/.env`, abra outro terminal na pasta `backend` e libere somente seu banco de desenvolvimento:
 
 ```powershell
 node --env-file=.env scripts/checkout-control.mjs pause
 node --env-file=.env scripts/checkout-control.mjs open
+node --env-file=.env scripts/checkout-control.mjs status
 ```
 
-O modelo `.env.example` define `NODE_ENV=development` e `CHECKOUT_CONTROL_URL=http://localhost:3000`. O token administrativo deve estar preenchido no `.env`; não o envie ao frontend. Para produção, siga o [roteiro de implantação e recuperação](deploy/CHECKOUT-RECOVERY.md), que exige migrations e configuração autorizadas separadamente.
+O status deve informar `aberto: true` antes de testar uma compra. O modelo `.env.example` define `NODE_ENV=development` e `CHECKOUT_CONTROL_URL=http://localhost:3000`. O token administrativo deve coincidir no terminal de controle e na API; reinicie a API se alterar seu `.env`. Não envie esse token ao frontend. Para produção, siga o [roteiro de implantação e recuperação](deploy/CHECKOUT-RECOVERY.md), que exige migrations e configuração autorizadas separadamente.
 
 ### E-mails em desenvolvimento
 
